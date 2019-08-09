@@ -39,6 +39,7 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashSet;
 
 /**
  * show list of BLE devices
@@ -58,6 +59,7 @@ public class DevicesFragment extends ListFragment {
     private ArrayAdapter<BluetoothDevice> listAdapter;
     private BluetoothLeScanner bluetoothLeScanner;
     private ScanCallback scancallback;
+    private boolean stopped = true;
 
 
     public DevicesFragment() {
@@ -173,6 +175,10 @@ public class DevicesFragment extends ListFragment {
     }
 
     private void startScan() {
+        if (!stopped) {
+            Log.i(TAG, "Previous scan must be stopped first");
+            return;
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (getActivity().checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                 AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
@@ -198,6 +204,10 @@ public class DevicesFragment extends ListFragment {
         filters.add(new ScanFilter.Builder().setDeviceName("FRANCINE3").build());
         filters.add(new ScanFilter.Builder().setDeviceName("FRANCINE4").build());
 
+        HashSet<String> foundDevices = new HashSet<>();
+
+        int target = 2;
+
         Log.i(TAG, "Starting Scan");
         scancallback = new ScanCallback() {
             @Override
@@ -205,9 +215,14 @@ public class DevicesFragment extends ListFragment {
                 super.onScanResult(callbackType, result);
                 BluetoothDevice device = result.getDevice();
                 Log.i(TAG, "Name: " + device.getName());
-                Log.i(TAG, "updating scan");
-                getActivity().runOnUiThread(() -> updateScan(device));
-                stopScan();
+                if (!foundDevices.contains(device.getName())) {
+                    Log.i(TAG, "updating scan");
+                    getActivity().runOnUiThread(() -> updateScan(device));
+                    foundDevices.add(device.getName());
+                    if (foundDevices.size() >= target) {
+                        stopScan();
+                    }
+                }
             }
 
             @Override
@@ -222,9 +237,9 @@ public class DevicesFragment extends ListFragment {
                 Log.i(TAG, "scanFailed: " + errorCode);
             }
         };
+        stopped = false;
         bluetoothLeScanner.startScan(filters, settings, scancallback);
         // bluetoothAdapter.startDiscovery();
-        //  BluetoothLeScanner.startScan(...) would return more details, but that's not needed here
     }
 
     @Override
@@ -258,6 +273,7 @@ public class DevicesFragment extends ListFragment {
         }
         Log.i(TAG, "Stopping scan");
         bluetoothLeScanner.stopScan(scancallback);
+        stopped = true;
         //bluetoothAdapter.cancelDiscovery();
     }
 
