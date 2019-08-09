@@ -14,7 +14,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+        setContentView(R.layout.select_n_jackets);
 
         radioGroup = findViewById(R.id.radioGroup);
     }
@@ -30,4 +30,5 @@ public class MainActivity extends AppCompatActivity {
         intent.putExtra("jackets", idx + 1);
 
         startActivity(intent);
+    }
 }

@@ -10,14 +10,19 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.select_n_jackets);
+        setContentView(R.layout.activity_main);
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         getSupportFragmentManager().addOnBackStackChangedListener(this);
-        if (savedInstanceState == null)
-            getSupportFragmentManager().beginTransaction().add(R.id.fragment, new DevicesFragment(), "devices").commit();
-        else
+        if (savedInstanceState == null) {
+            // Pass through the bundle.
+            Bundle bundle = getIntent().getExtras();
+            DevicesFragment fragObj = new DevicesFragment();
+            fragObj.setArguments(bundle);
+            getSupportFragmentManager().beginTransaction().add(R.id.fragment, fragObj, "devices").commit();
+        } else {
             onBackStackChanged();
+        }
     }
 
     @Override

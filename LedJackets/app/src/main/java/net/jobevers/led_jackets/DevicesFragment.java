@@ -56,7 +56,7 @@ public class DevicesFragment extends ListFragment {
     private BluetoothLeScanner bluetoothLeScanner;
     private ScanCallback scancallback;
     private boolean stopped = true;
-
+    int nJackets;
 
     public DevicesFragment() {
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
@@ -93,6 +93,7 @@ public class DevicesFragment extends ListFragment {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
+        nJackets = getArguments().getInt("jackets");
         listAdapter = new ArrayAdapter<BluetoothDevice>(getActivity(), 0, listItems) {
             @Override
             public View getView(int position, View view, ViewGroup parent) {
@@ -202,8 +203,6 @@ public class DevicesFragment extends ListFragment {
 
         HashSet<String> foundDevices = new HashSet<>();
 
-        int target = 2;
-
         Log.i(TAG, "Starting Scan");
         scancallback = new ScanCallback() {
             @Override
@@ -215,7 +214,7 @@ public class DevicesFragment extends ListFragment {
                     Log.i(TAG, "updating scan");
                     getActivity().runOnUiThread(() -> updateScan(device));
                     foundDevices.add(device.getName());
-                    if (foundDevices.size() >= target) {
+                    if (foundDevices.size() >= nJackets) {
                         stopScan();
                     }
                 }
