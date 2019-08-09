@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Simple BLE Terminal</string>
+    <string name="app_name">LED Jackets</string>
     <string name="devices">Bluetooth LE Devices</string>
 
     <string name="location_permission_title">Location permission required</string>
@@ -8,5 +8,10 @@
     <string name="location_denied_title">Location permission denied</string>
     <string name="location_denied_message">As location permission has not been granted, this app cannot scan for Bluetooth LE devices.</string>
     <string name="pairing_request">PAIRING requested\n-> Perform pairing steps. Connect again</string>
-
+    <string name="one">One</string>
+    <string name="four">Four</string>
+    <string name="three">Three</string>
+    <string name="two">Two</string>
+    <string name="how_many_jackets">How Many Jackets?</string>
+    <string name="go">Go</string>
 </resources>

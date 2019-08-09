@@ -1,4 +1,4 @@
-package de.kai_morich.simple_bluetooth_le_terminal;
+package net.jobevers.led_jackets;
 
 class Constants {
 
