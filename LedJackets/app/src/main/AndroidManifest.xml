@@ -6,30 +6,32 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+
     <uses-permission-sdk-23 android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- mipmap/ic_launcher created with Android Studio -> New -> Image Asset using @color/colorPrimaryDark as background color -->
     <application
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/AppTheme"
         tools:ignore="AllowBackup,GoogleAppIndexingWarning">
+        <activity android:name=".ColorBox"></activity>
         <activity
-            android:name="net.jobevers.led_jackets.MainActivity"
+            android:name=".MainActivity"
             android:label="@string/app_name"
             android:windowSoftInputMode="stateHidden|adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
         <activity
-            android:name="net.jobevers.led_jackets.ScanActivity"
+            android:name=".ScanActivity"
             android:label="@string/app_name"
-            android:windowSoftInputMode="stateHidden|adjustResize">
-        </activity>
-        <service android:name="net.jobevers.led_jackets.SerialService" />
-        <service android:name="net.jobevers.led_jackets.PatternGenerator" />
+            android:windowSoftInputMode="stateHidden|adjustResize"></activity>
+
+        <service android:name=".SerialService" />
+        <service android:name=".PatternGenerator" />
     </application>
 
 </manifest>

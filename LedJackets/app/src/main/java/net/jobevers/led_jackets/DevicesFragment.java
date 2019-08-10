@@ -21,6 +21,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.support.annotation.NonNull;
+import android.support.v4.app.Fragment;
 import android.support.v4.app.ListFragment;
 import android.util.Log;
 import android.view.Menu;
@@ -234,7 +235,6 @@ public class DevicesFragment extends ListFragment {
         };
         stopped = false;
         bluetoothLeScanner.startScan(filters, settings, scancallback);
-        // bluetoothAdapter.startDiscovery();
     }
 
     @Override
@@ -276,16 +276,15 @@ public class DevicesFragment extends ListFragment {
     public void onListItemClick(ListView l, View v, int position, long id) {
         stopScan();
         BluetoothDevice device = listItems.get(position-1);
-        BluetoothGatt bluetoothGatt = device.connectGatt(getContext(), false, new MyCallback(position - 1));
-        Log.i(TAG, "GATT Connected");
-        for (BluetoothGattService bs: bluetoothGatt.getServices()) {
-            Log.i(TAG, "UUID: " + bs.getUuid());
-        }
+        //bluetoothGatt.discoverServices();
 //        Bundle args = new Bundle();
 //        args.putString("device", device.getAddress());
 //        Fragment fragment = new TerminalFragment();
 //        fragment.setArguments(args);
 //        getFragmentManager().beginTransaction().replace(R.id.fragment, fragment, "terminal").addToBackStack(null).commit();
+        Intent intent = new Intent(this.getActivity(), ColorBox.class);
+        intent.putExtra("device", device.getAddress());
+        startActivity(intent);
     }
 
     /**
