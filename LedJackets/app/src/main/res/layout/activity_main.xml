@@ -19,10 +19,23 @@
 
     </android.support.design.widget.AppBarLayout>
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
     <RelativeLayout
         android:id="@+id/fragment"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         app:layout_behavior="@string/appbar_scrolling_view_behavior"/>
+
+    <Button
+        android:id="@+id/go_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_weight="0"
+        android:text="@string/go" />
+    </LinearLayout>
 
 </android.support.design.widget.CoordinatorLayout>

@@ -1,6 +1,7 @@
 package net.jobevers.led_jackets;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -30,6 +31,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.ListView;
 import android.widget.TextView;
 
@@ -44,6 +46,13 @@ import java.util.HashSet;
 
 
 public class DevicesFragment extends ListFragment {
+
+    BleScanCompletedListener bleScanCompletedListener;
+
+    public interface BleScanCompletedListener {
+        void onBleScanCompleted(List<BluetoothDevice> devices);
+    }
+
     private String TAG="DevicesFragment";
 
     private Menu menu;
@@ -58,6 +67,7 @@ public class DevicesFragment extends ListFragment {
     private ScanCallback scancallback;
     private boolean stopped = true;
     int nJackets;
+
 
     public DevicesFragment() {
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
@@ -111,6 +121,7 @@ public class DevicesFragment extends ListFragment {
                 return view;
             }
         };
+
     }
 
     @Override
@@ -251,6 +262,18 @@ public class DevicesFragment extends ListFragment {
         }
     }
 
+    @Override
+    public void onAttach(Context context) {
+        super.onAttach(context);
+
+        try {
+            bleScanCompletedListener = (BleScanCompletedListener) context;
+        } catch (ClassCastException e) {
+            throw new ClassCastException(context.toString() +  " must implement BleScanCompletedListener");
+        }
+    }
+
+
     private void updateScan(BluetoothDevice device) {
         Log.i(TAG, "Device Name: " + device.getName());
         if(listItems.indexOf(device) < 0) {
@@ -269,22 +292,25 @@ public class DevicesFragment extends ListFragment {
         Log.i(TAG, "Stopping scan");
         bluetoothLeScanner.stopScan(scancallback);
         stopped = true;
+        bleScanCompletedListener.onBleScanCompleted(listItems);
         //bluetoothAdapter.cancelDiscovery();
     }
 
     @Override
     public void onListItemClick(ListView l, View v, int position, long id) {
-        stopScan();
-        BluetoothDevice device = listItems.get(position-1);
-        //bluetoothGatt.discoverServices();
-//        Bundle args = new Bundle();
-//        args.putString("device", device.getAddress());
-//        Fragment fragment = new TerminalFragment();
-//        fragment.setArguments(args);
-//        getFragmentManager().beginTransaction().replace(R.id.fragment, fragment, "terminal").addToBackStack(null).commit();
-        Intent intent = new Intent(this.getActivity(), ColorBox.class);
-        intent.putExtra("device", device.getAddress());
-        startActivity(intent);
+//        // Don't do anything.  Instead, when the scan stops, we tell our parent
+//        // and then go onto the next.
+//        stopScan();
+//        BluetoothDevice device = listItems.get(position-1);
+//        //bluetoothGatt.discoverServices();
+////        Bundle args = new Bundle();
+////        args.putString("device", device.getAddress());
+////        Fragment fragment = new TerminalFragment();
+////        fragment.setArguments(args);
+////        getFragmentManager().beginTransaction().replace(R.id.fragment, fragment, "terminal").addToBackStack(null).commit();
+//        Intent intent = new Intent(this.getActivity(), ColorBox.class);
+//        intent.putExtra("device", device.getAddress());
+//        startActivity(intent);
     }
 
     /**

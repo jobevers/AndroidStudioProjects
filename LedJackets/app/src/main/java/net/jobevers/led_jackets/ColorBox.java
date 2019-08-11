@@ -13,6 +13,7 @@ import android.view.View;
 
 import net.jobevers.led_jackets.R;
 
+import java.util.ArrayList;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -22,10 +23,11 @@ public class ColorBox extends AppCompatActivity {
     View colorBox;
     int hue = 0;
     private Handler mHandler;
-    private String deviceAddress;
-    private BluetoothDevice device;
-    private BluetoothGatt bluetoothGatt;
-    private MyCallback callback;
+    private int nDevices;
+    private ArrayList<String> deviceAddresses = new ArrayList<>();
+    private ArrayList<BluetoothDevice> devices = new ArrayList<>();
+    private ArrayList<BluetoothGatt> bluetoothGatts = new ArrayList<>();
+    private ArrayList<MyCallback> callbacks = new ArrayList<>();
     private long nextKeyFrame;
 
     @Override
@@ -35,14 +37,21 @@ public class ColorBox extends AppCompatActivity {
         colorBox = findViewById(R.id.colorBox);
 
         if (savedInstanceState == null) {
-            // Pass through the bundle.
-            Bundle bundle = getIntent().getExtras();
-            deviceAddress = bundle.getString("device");
             BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-            device = bluetoothAdapter.getRemoteDevice(deviceAddress);
-            callback = new MyCallback(0);
-            bluetoothGatt = device.connectGatt(getApplicationContext(), false, callback);
-            Log.i(TAG, "GATT Connected");
+            // Pass through the bundle and get all of the devices
+            Bundle bundle = getIntent().getExtras();
+            int nDevices = bundle.getInt("nDevices");
+            for (int i = 0; i < nDevices; i++) {
+                String address = bundle.getString("device" + i);
+                deviceAddresses.add(address);
+                BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
+                devices.add(device);
+                MyCallback callback = new MyCallback(i);
+                callbacks.add(callback);
+                BluetoothGatt gatt = device.connectGatt(getApplicationContext(), false, callback);
+                bluetoothGatts.add(gatt);
+                Log.i(TAG, "GATT Connected: " + i);
+            }
         } else {
             // What do I do here?
         }
@@ -61,8 +70,10 @@ public class ColorBox extends AppCompatActivity {
                 colorBox.setBackgroundColor(Color.HSVToColor(hsv));
                 hue = (hue + 1) % 360;
                 if (now >= nextKeyFrame) {
-                    int hueByte = (int)(hue * 255.0 / 360);
-                    callback.sendColor(hueByte);
+                    int hueByte = (int) (hue * 255.0 / 360);
+                    for (MyCallback callback : callbacks) {
+                        callback.sendColor(hueByte);
+                    }
                     nextKeyFrame += 250;
                 }
             } finally {

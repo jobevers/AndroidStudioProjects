@@ -5,6 +5,8 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
+import android.bluetooth.BluetoothProfile;
+import android.content.Context;
 import android.util.Log;
 
 import java.util.UUID;
@@ -21,6 +23,7 @@ public class MyCallback extends BluetoothGattCallback {
     BluetoothGatt gatt;
     private int hue = 0;
     private long time;
+    private boolean wait = true;
 
     public MyCallback(int idx) {
         super();
@@ -43,8 +46,14 @@ public class MyCallback extends BluetoothGattCallback {
     @Override
     public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
         super.onConnectionStateChange(gatt, status, newState);
-        Log.i(TAG, "onConnectionStateChange");
-        gatt.discoverServices();
+        Log.i(TAG, "onConnectionStateChange " + status + " " + newState);
+        characteristic = null;
+        if (newState == BluetoothProfile.STATE_CONNECTED) {
+            gatt.discoverServices();
+        } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+            // Lets.. try to re-connect, I guess.
+            gatt.connect();
+        }
     }
 
     @Override
@@ -54,6 +63,7 @@ public class MyCallback extends BluetoothGattCallback {
         Log.i(TAG, "onServicesDiscovered");
         BluetoothGattService service = gatt.getService(BLUETOOTH_LE_CC254X_SERVICE);
         characteristic = service.getCharacteristic(BLUETOOTH_LE_CC254X_CHAR_RW);
+        wait = false;
     }
 
     public void sendColor(int hue) {
@@ -61,33 +71,51 @@ public class MyCallback extends BluetoothGattCallback {
             Log.i(TAG, "Waiting for service discovery");
             return;
         }
+        if (wait) {
+            Log.i(TAG, "Still waiting for acknowledgement so skipping. Sad.");
+            return;
+        }
         // TODO: a queue would be better here so that
         // I know that I'm not overwhelming the writeCharacteristic
         // and should wait until onCharacteristicWrite has finished
-        Log.i(TAG, "Color " + hue);
-        byte[] val = {
-                (byte) hue, (byte) 0xFF, (byte) 0xFF, // pixel 1
-                (byte) (hue + 10), (byte) 0xFF, (byte) 0xFF, // pixel 2
-                (byte) (hue + 20), (byte) 0xFF, (byte) 0xFF, // pixel 3
-                // The remaining 11 bytes are filler
-                (byte) 0xFF,
+        int sat = 0xFF;
+        int val = 0xFF;
+        byte[] data = {
+                pack((byte)hue,        (byte)sat, (byte)val),
+                pack((byte)(hue + 10), (byte)sat, (byte)val),
+                pack((byte)(hue + 20), (byte)sat, (byte)val),
+                // The remaining 17 bytes are filler
+                (byte) 0xFF, (byte) 0xFF,
+                (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
                 (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
                 (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF
         };
-        characteristic.setValue(val);
+        characteristic.setValue(data);
+        Log.i(TAG, "Writing color " + hue + " : " + (hue & 0xF0));
+        wait = true;
         gatt.writeCharacteristic(characteristic);
+    }
+
+    public byte pack(byte hue, byte sat, byte val) {
+        // Grab 4 most significant bits of the hue
+        // The 2 most significant bits of the sat / val
+        // The latter two need to be shifted 4 and 6 bits respectively
+        // The end result is 8 bits: hhhhssvv.
+        return (byte)((hue & 0xF0) | ((sat & 0xC0) >> 4) | ((val & 0xC0) >> 6));
     }
 
     @Override
     public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
         super.onCharacteristicRead(gatt, characteristic, status);
-        Log.i(TAG, "onCharacteristicRead");
+        wait = false;
+        Log.i(TAG, "onCharacteristicRead: " + characteristic.getValue());
     }
 
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
         super.onCharacteristicWrite(gatt, characteristic, status);
         Log.i(TAG, "onCharacteristicWrite");
+        gatt.readCharacteristic(characteristic);
     }
 
     @Override
