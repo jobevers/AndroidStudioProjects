@@ -13,6 +13,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
 
 import net.jobevers.led_jackets.R;
 
@@ -20,11 +22,13 @@ import java.util.ArrayList;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class ColorBox extends AppCompatActivity {
+import processing.android.PFragment;
+
+public class ColorBox extends AppCompatActivity implements PatternGenerator.PatternDrawListener {
 
     private String TAG = "ColorBox";
-    View colorBox;
-    int hue = 0;
+    private int KEY_FRAME_DURATION = 250;
+    FrameLayout frame;
     private Handler mHandler;
     private int nDevices;
     private ArrayList<String> deviceAddresses = new ArrayList<>();
@@ -33,12 +37,14 @@ public class ColorBox extends AppCompatActivity {
     private ArrayList<MyCallback> callbacks = new ArrayList<>();
     private ArrayList<Boolean> connected = new ArrayList<>();
     private long nextKeyFrame;
+    private PatternGenerator patternGenerator;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.color_box);
-        colorBox = findViewById(R.id.colorBox);
+        frame = findViewById(R.id.frame_layout);
 
         if (savedInstanceState == null) {
             BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
@@ -56,6 +62,12 @@ public class ColorBox extends AppCompatActivity {
                 connected.add(false);
             }
             connectGatt(0);
+            // This code is from the example at
+            // https://android.processing.org/tutorials/android_studio/index.html
+            patternGenerator = new PatternGenerator();
+            patternGenerator.setDrawListener(this);
+            PFragment fragment = new PFragment(patternGenerator);
+            fragment.setView(frame, this);
         } else {
             // What do I do here?
         }
@@ -91,8 +103,6 @@ public class ColorBox extends AppCompatActivity {
         for (BluetoothDevice dev : bluetoothManager.getConnectedDevices(BluetoothProfile.GATT)) {
             Log.i(TAG, "Connected: " + dev.getAddress());
         }
-        // Calling via handler because we need to make sure this runs in the UI thread
-        mHandler.postDelayed(mColorSetter, 0);
     }
 
     private boolean areAllConnected() {
@@ -100,26 +110,36 @@ public class ColorBox extends AppCompatActivity {
         return true;
     }
 
-    Runnable mColorSetter = new Runnable() {
-        @Override
-        public void run() {
-            try {
-                long now = System.currentTimeMillis();
-                float[] hsv = {hue, 1, 1};
-                colorBox.setBackgroundColor(Color.HSVToColor(hsv));
-                hue = (hue + 1) % 360;
-                if (now >= nextKeyFrame) {
-                    int hueByte = (int) (hue * 255.0 / 360);
-                    for (MyCallback callback : callbacks) {
-                        callback.sendColor(hueByte);
-                    }
-                    nextKeyFrame += 250;
-                }
-            } finally {
-                // 100% guarantee that this always happens, even if
-                // your update method throws an exception
-                mHandler.postDelayed(mColorSetter, 30);
+    public void onFrame(int hue) {
+        long now = System.currentTimeMillis();
+        if (now >= nextKeyFrame) {
+            for (MyCallback callback : callbacks) {
+                callback.sendColor(hue);
             }
+            nextKeyFrame += KEY_FRAME_DURATION;
         }
-    };
+    }
+
+//    Runnable mColorSetter = new Runnable() {
+//        @Override
+//        public void run() {
+//            try {
+//                long now = System.currentTimeMillis();
+//                float[] hsv = {hue, 1, 1};
+//                colorBox.setBackgroundColor(Color.HSVToColor(hsv));
+//                hue = (hue + 1) % 360;
+//                if (now >= nextKeyFrame) {
+//                    int hueByte = (int) (hue * 255.0 / 360);
+//                    for (MyCallback callback : callbacks) {
+//                        callback.sendColor(hueByte);
+//                    }
+//                    nextKeyFrame += 250;
+//                }
+//            } finally {
+//                // 100% guarantee that this always happens, even if
+//                // your update method throws an exception
+//                mHandler.postDelayed(mColorSetter, 30);
+//            }
+//        }
+//    };
 }

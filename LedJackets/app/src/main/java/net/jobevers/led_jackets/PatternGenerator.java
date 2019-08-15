@@ -1,20 +1,43 @@
 package net.jobevers.led_jackets;
 
-import android.app.IntentService;
-import android.content.Intent;
+import android.bluetooth.BluetoothDevice;
 
+import java.util.List;
 
-public class PatternGenerator extends IntentService {
-    /**
-     * A constructor is required, and must call the super <code><a href="/reference/android/app/IntentService.html#IntentService(java.lang.String)">IntentService(String)</a></code>
-     * constructor with a name for the worker thread.
-     */
-    public PatternGenerator() {
-        super("PatternGeneratorService");
+import processing.core.PApplet;
+
+public class PatternGenerator extends PApplet {
+
+    PatternDrawListener drawListener;
+    int hue = 0;
+
+    public interface PatternDrawListener {
+        void onFrame(int hue);
     }
 
-    @Override
-    protected void onHandleIntent(Intent workIntent) {
-        int i=0;
+    // https://processing.org/reference/settings_.html
+    // settings is only needed because I'm not in the
+    // processing IDE.
+    public void settings() {
+        size(100, 100);
+    }
+
+    public void setup() {
+        frameRate(30);
+        colorMode(HSB, 255, 255, 255);
+    }
+
+    public void setDrawListener(PatternDrawListener drawListener) {
+        this.drawListener = drawListener;
+    }
+
+    public void draw() {
+        loadPixels();
+        for (int i=0; i<pixels.length; i++) {
+            pixels[i] = color(hue, 255, 255);
+        }
+        updatePixels();
+        drawListener.onFrame(hue);
+        hue = (hue + 1) % 256;
     }
 }

@@ -31,7 +31,6 @@
             android:windowSoftInputMode="stateHidden|adjustResize"></activity>
 
         <service android:name=".SerialService" />
-        <service android:name=".PatternGenerator" />
     </application>
 
 </manifest>
