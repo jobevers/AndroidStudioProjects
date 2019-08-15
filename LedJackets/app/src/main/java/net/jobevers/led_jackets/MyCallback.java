@@ -67,14 +67,24 @@ public class MyCallback extends BluetoothGattCallback {
     @Override
     public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
         super.onConnectionStateChange(gatt, status, newState);
+        // status:
+        //
+        // newState:
+        // 0 -> STATE_DISCONNECTED
+        // 2 -> STATE_CONNECTED
+        // These probably aren't used
+        // 1 -> STATE_CONNECTING
+        // 3 -> STATE_DISCONNECTING
         Log.i(TAG, "onConnectionStateChange " + status + " " + newState);
         characteristic = null;
         if (newState == BluetoothProfile.STATE_CONNECTED) {
+            Log.i(TAG, "calling discoverServices()");
             gatt.discoverServices();
         } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
             // Lets.. try to re-connect, I guess.
             this.connected = false;
             waitOverride = Integer.MAX_VALUE;
+            Log.i(TAG, "calling gatt.connect()");
             gatt.connect();
         }
     }
@@ -91,12 +101,11 @@ public class MyCallback extends BluetoothGattCallback {
     }
 
     public void sendColor(int hue) {
-        boolean shouldExit = false;
         if (!connected) {
             Log.i(TAG, "Waiting to be connected");
-            failures += 1;
-            shouldExit = true;
+            return;
         }
+        boolean shouldExit = false;
         if (wait) {
             if (System.currentTimeMillis() < waitOverride) {
                 Log.i(TAG, "Still waiting for acknowledgement so skipping. Sad.");
@@ -113,8 +122,13 @@ public class MyCallback extends BluetoothGattCallback {
             shouldExit = true;
         }
         if (failures > 8) {
-            Log.i(TAG, "We have had too many failures, lets disconnect");
-            gatt.disconnect();
+            if (gatt != null) {
+                Log.i(TAG, "We have had too many failures, lets disconnect");
+                gatt.disconnect();
+                connected = false;
+                // TODO: pass up to the parent that we aren't connected so that the UI
+                //       can do something to show this.
+            }
             return;
         }
         if (shouldExit) {
@@ -136,8 +150,10 @@ public class MyCallback extends BluetoothGattCallback {
         // But in the way the arduino is coded right now I wait
         // for the entire frame to be received, so it doesn't really matter.
         // Maybe some point in the future I could be more clever....
+        byte datum = pack((byte) hue, (byte) sat, (byte) val);
         for (int i = 0; (2 * i + msg) < 25; i++) {
-            data[i + 1] = pack((byte) (hue + 10 * (2 * i + msg)), (byte) sat, (byte) val);
+            data[i + 1] = datum;
+            //data[i + 1] = pack((byte) (hue + 10 * (2 * i + msg)), (byte) sat, (byte) val);
         }
         characteristic.setValue(data);
         Log.i(TAG, "Writing msg: " + msg + ". color " + hue + " : " + (hue & 0xF0));

@@ -62,12 +62,6 @@ public class ColorBox extends AppCompatActivity implements PatternGenerator.Patt
                 connected.add(false);
             }
             connectGatt(0);
-            // This code is from the example at
-            // https://android.processing.org/tutorials/android_studio/index.html
-            patternGenerator = new PatternGenerator();
-            patternGenerator.setDrawListener(this);
-            PFragment fragment = new PFragment(patternGenerator);
-            fragment.setView(frame, this);
         } else {
             // What do I do here?
         }
@@ -97,7 +91,14 @@ public class ColorBox extends AppCompatActivity implements PatternGenerator.Patt
         // so we can start running
         nextKeyFrame = System.currentTimeMillis();
         Log.i(TAG, "EVERYTHING IS CONNECTED");
-        // Initializes Bluetooth adapter.
+        // This code is from the example at
+        // https://android.processing.org/tutorials/android_studio/index.html
+        patternGenerator = new PatternGenerator();
+        patternGenerator.setDrawListener(this);
+        PFragment fragment = new PFragment(patternGenerator);
+        fragment.setView(frame, this);
+
+        // This is just for logging
         final BluetoothManager bluetoothManager =
                 (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         for (BluetoothDevice dev : bluetoothManager.getConnectedDevices(BluetoothProfile.GATT)) {

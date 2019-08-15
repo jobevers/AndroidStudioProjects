@@ -30,7 +30,7 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
             Intent intent = new Intent(context, ColorBox.class);
             ScanActivity activity = (ScanActivity) context;
             // The button is only enabled once we have devices.
-            // so we know that this will exists
+            // so we know that this will exist
             intent.putExtra("nDevices", activity.devices.size());
             for (int i = 0; i < activity.devices.size(); i++) {
                 BluetoothDevice device = activity.devices.get(i);

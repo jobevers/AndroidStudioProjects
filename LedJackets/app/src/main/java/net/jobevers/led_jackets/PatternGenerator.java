@@ -38,6 +38,6 @@ public class PatternGenerator extends PApplet {
         }
         updatePixels();
         drawListener.onFrame(hue);
-        hue = (hue + 1) % 256;
+        hue = (hue + 2) % 256;
     }
 }
