@@ -298,19 +298,6 @@ public class DevicesFragment extends ListFragment {
 
     @Override
     public void onListItemClick(ListView l, View v, int position, long id) {
-//        // Don't do anything.  Instead, when the scan stops, we tell our parent
-//        // and then go onto the next.
-//        stopScan();
-//        BluetoothDevice device = listItems.get(position-1);
-//        //bluetoothGatt.discoverServices();
-////        Bundle args = new Bundle();
-////        args.putString("device", device.getAddress());
-////        Fragment fragment = new TerminalFragment();
-////        fragment.setArguments(args);
-////        getFragmentManager().beginTransaction().replace(R.id.fragment, fragment, "terminal").addToBackStack(null).commit();
-//        Intent intent = new Intent(this.getActivity(), ColorBox.class);
-//        intent.putExtra("device", device.getAddress());
-//        startActivity(intent);
     }
 
     /**
