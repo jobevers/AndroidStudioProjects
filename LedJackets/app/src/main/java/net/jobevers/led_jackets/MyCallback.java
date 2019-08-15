@@ -35,7 +35,15 @@ public class MyCallback extends BluetoothGattCallback {
     private long time;
     private boolean connected = false;
     private boolean wait = true;
+    // generally want to wait until we get a confirmation message before sending
+    // the next frame.  But if its been too long and were still connected, try again.
+    private long waitOverride = Long.MAX_VALUE;
+    // keep track of continuous failure.  If this gets too high we'll disconnect
+    // to force a reconnect;
+    private int failures = 0;
+    // Each frame consists of 2 messages.  This gets set to 1 after we send the first message
     private int nextMessage;
+
 
     public MyCallback(int idx, ColorBox parent) {
         super();
@@ -66,6 +74,7 @@ public class MyCallback extends BluetoothGattCallback {
         } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
             // Lets.. try to re-connect, I guess.
             this.connected = false;
+            waitOverride = Integer.MAX_VALUE;
             gatt.connect();
         }
     }
@@ -82,17 +91,33 @@ public class MyCallback extends BluetoothGattCallback {
     }
 
     public void sendColor(int hue) {
+        boolean shouldExit = false;
         if (!connected) {
             Log.i(TAG, "Waiting to be connected");
-            return;
+            failures += 1;
+            shouldExit = true;
         }
         if (wait) {
-            Log.i(TAG, "Still waiting for acknowledgement so skipping. Sad.");
-            return;
+            if (System.currentTimeMillis() < waitOverride) {
+                Log.i(TAG, "Still waiting for acknowledgement so skipping. Sad.");
+                failures += 1;
+                shouldExit = true;
+            } else {
+                Log.i(TAG, "Still waiting for acknowledgement, buts lets try anyway");
+            }
         }
         if (characteristic == null) {
             // Shouldn't every get here, connected is set after characteristic.
             Log.i(TAG, "Waiting for service discovery");
+            failures += 1;
+            shouldExit = true;
+        }
+        if (failures > 8) {
+            Log.i(TAG, "We have had too many failures, lets disconnect");
+            gatt.disconnect();
+            return;
+        }
+        if (shouldExit) {
             return;
         }
         this.hue = hue;
@@ -108,7 +133,7 @@ public class MyCallback extends BluetoothGattCallback {
         byte[] data = new byte[payloadSize];
         data[0] = (byte) msg;
         // For some reason I convinced myself that interlaced is better
-        // But it the way the arduino is coded right now I wait
+        // But in the way the arduino is coded right now I wait
         // for the entire frame to be received, so it doesn't really matter.
         // Maybe some point in the future I could be more clever....
         for (int i = 0; (2 * i + msg) < 25; i++) {
@@ -117,6 +142,7 @@ public class MyCallback extends BluetoothGattCallback {
         characteristic.setValue(data);
         Log.i(TAG, "Writing msg: " + msg + ". color " + hue + " : " + (hue & 0xF0));
         wait = true;
+        waitOverride = System.currentTimeMillis() + 1000;
         nextMessage = (msg + 1) % 2;
         gatt.writeCharacteristic(characteristic);
     }
@@ -138,18 +164,15 @@ public class MyCallback extends BluetoothGattCallback {
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
         super.onCharacteristicWrite(gatt, characteristic, status);
         Log.i(TAG, "onCharacteristicWrite");
-        Log.i(TAG, "Trigger characteristicRead");
-        gatt.readCharacteristic(characteristic);
     }
 
     @Override
     public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
         super.onCharacteristicChanged(gatt, characteristic);
-        Log.i(TAG, "onCharacteristicChanged");
         byte[] val = characteristic.getValue();
-        int msg = (int) val[0];
-        Log.i(TAG, "onCharacteristicRead: " + val);
-        Log.i(TAG, "onCharacteristicRead: msg: " + msg);
+        Log.i(TAG, "onCharacteristicChanged: " + bytesToHex(val));
+        int msg = val[0] & 0xFF;
+        Log.i(TAG, "onCharacteristicChanged: msg: " + msg);
         // TODO: would be nice to get the actual message from the arduino
         // but in the meantime, just assume things have been sent 0 and then 1.
         if (nextMessage == 1) {
@@ -159,6 +182,18 @@ public class MyCallback extends BluetoothGattCallback {
         } else {
             wait = false;
         }
+        failures = 0;
+    }
+
+    private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
+    public static String bytesToHex(byte[] bytes) {
+        char[] hexChars = new char[bytes.length * 2];
+        for (int j = 0; j < bytes.length; j++) {
+            int v = bytes[j] & 0xFF;
+            hexChars[j * 2] = HEX_ARRAY[v >>> 4];
+            hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
+        }
+        return new String(hexChars);
     }
 
     @Override
