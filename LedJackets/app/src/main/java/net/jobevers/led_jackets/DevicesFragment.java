@@ -39,6 +39,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.HashSet;
+import java.util.stream.Collectors;
 
 /**
  * show list of BLE devices
@@ -51,6 +52,16 @@ public class DevicesFragment extends ListFragment {
 
     public interface BleScanCompletedListener {
         void onBleScanCompleted(List<BluetoothDevice> devices);
+        void setStatusListener(JacketService.StatusListener listener);
+    }
+
+    class DeviceWithStatus {
+        public BluetoothDevice device;
+        public String status;
+        DeviceWithStatus(BluetoothDevice device, String status){
+            this.device = device;
+            this.status = status;
+        }
     }
 
     private String TAG="DevicesFragment";
@@ -61,8 +72,8 @@ public class DevicesFragment extends ListFragment {
     private IntentFilter bleDiscoveryIntentFilter;
     private boolean francineFound = false;
 
-    private ArrayList<BluetoothDevice> listItems = new ArrayList<>();
-    private ArrayAdapter<BluetoothDevice> listAdapter;
+    private ArrayList<DeviceWithStatus> listItems = new ArrayList<>();
+    private ArrayAdapter<DeviceWithStatus> listAdapter;
     private BluetoothLeScanner bluetoothLeScanner;
     private ScanCallback scancallback;
     private boolean stopped = true;
@@ -105,19 +116,22 @@ public class DevicesFragment extends ListFragment {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
         nJackets = getArguments().getInt("jackets");
-        listAdapter = new ArrayAdapter<BluetoothDevice>(getActivity(), 0, listItems) {
+        listAdapter = new ArrayAdapter<DeviceWithStatus>(getActivity(), 0, listItems) {
             @Override
             public View getView(int position, View view, ViewGroup parent) {
-                BluetoothDevice device = listItems.get(position);
+                DeviceWithStatus ds = listItems.get(position);
+                BluetoothDevice device = ds.device;
                 if (view == null)
                     view = getActivity().getLayoutInflater().inflate(R.layout.device_list_item, parent, false);
-                TextView text1 = view.findViewById(R.id.text1);
-                TextView text2 = view.findViewById(R.id.text2);
+                TextView text1 = view.findViewById(R.id.textName);
+                TextView text2 = view.findViewById(R.id.textAddress);
+                TextView text3 = view.findViewById(R.id.textStatus);
                 if(device.getName() == null || device.getName().isEmpty())
                     text1.setText("<unnamed>");
                 else
                     text1.setText(device.getName());
                 text2.setText(device.getAddress());
+                text3.setText(ds.status);
                 return view;
             }
         };
@@ -268,19 +282,42 @@ public class DevicesFragment extends ListFragment {
 
         try {
             bleScanCompletedListener = (BleScanCompletedListener) context;
+            bleScanCompletedListener.setStatusListener(statusListener);
         } catch (ClassCastException e) {
             throw new ClassCastException(context.toString() +  " must implement BleScanCompletedListener");
         }
     }
 
+    JacketService.StatusListener statusListener = new JacketService.StatusListener() {
+        @Override
+        public void setStatus(BluetoothDevice device, String status) {
+            Log.i(TAG, "Recieved " + status);
+            for (DeviceWithStatus ds: listItems) {
+                if (ds.device == device) {
+                    ds.status = status;
+                }
+            }
+            listAdapter.notifyDataSetChanged();
+        }
+    };
 
     private void updateScan(BluetoothDevice device) {
         Log.i(TAG, "Device Name: " + device.getName());
-        if(listItems.indexOf(device) < 0) {
-            listItems.add(device);
+
+        if(!containsDevice(device)) {
+            listItems.add(new DeviceWithStatus(device, "DISCONNECTED"));
             Collections.sort(listItems, DevicesFragment::compareTo);
             listAdapter.notifyDataSetChanged();
         }
+    }
+
+    private boolean containsDevice(BluetoothDevice device) {
+        for (DeviceWithStatus dev: listItems) {
+            if (dev.device == device) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void stopScan() {
@@ -292,8 +329,17 @@ public class DevicesFragment extends ListFragment {
         Log.i(TAG, "Stopping scan");
         bluetoothLeScanner.stopScan(scancallback);
         stopped = true;
-        bleScanCompletedListener.onBleScanCompleted(listItems);
+
+        bleScanCompletedListener.onBleScanCompleted(getDevices());
         //bluetoothAdapter.cancelDiscovery();
+    }
+
+    private List<BluetoothDevice> getDevices() {
+        List<BluetoothDevice> devices = new ArrayList<>();
+        for (DeviceWithStatus ds : this.listItems) {
+            devices.add(ds.device);
+        }
+        return devices;
     }
 
     @Override
@@ -303,7 +349,9 @@ public class DevicesFragment extends ListFragment {
     /**
      * sort by name, then address. sort named devices first
      */
-    static int compareTo(BluetoothDevice a, BluetoothDevice b) {
+    static int compareTo(DeviceWithStatus da, DeviceWithStatus db) {
+        BluetoothDevice a = da.device;
+        BluetoothDevice b = db.device;
         boolean aValid = a.getName()!=null && !a.getName().isEmpty();
         boolean bValid = b.getName()!=null && !b.getName().isEmpty();
         if(aValid && bValid) {

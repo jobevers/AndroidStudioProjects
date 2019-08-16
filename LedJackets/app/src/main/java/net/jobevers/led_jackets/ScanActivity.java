@@ -1,12 +1,16 @@
 package net.jobevers.led_jackets;
 
 import android.bluetooth.BluetoothDevice;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.support.v4.app.FragmentManager;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 
@@ -15,8 +19,10 @@ import java.util.List;
 
 public class ScanActivity extends AppCompatActivity implements FragmentManager.OnBackStackChangedListener, DevicesFragment.BleScanCompletedListener {
 
+    private String TAG = "ScanActivity";
     private Button goButton;
     private List<BluetoothDevice> devices;
+    private JacketService service;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,17 +32,8 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
         goButton = findViewById(R.id.go_button);
         goButton.setEnabled(false);
         goButton.setOnClickListener((View v) -> {
-            Context context = v.getContext();
-            Intent intent = new Intent(context, ColorBox.class);
-            ScanActivity activity = (ScanActivity) context;
-            // The button is only enabled once we have devices.
-            // so we know that this will exist
-            intent.putExtra("nDevices", activity.devices.size());
-            for (int i = 0; i < activity.devices.size(); i++) {
-                BluetoothDevice device = activity.devices.get(i);
-                intent.putExtra("device" + i, device.getAddress());
-            }
-            startActivity(intent);
+            Log.d(TAG, "GO BUTTON clicked.  Creating service for devices!");
+            bindService(new Intent(this, JacketService.class), connection, Context.BIND_AUTO_CREATE);
         });
         setSupportActionBar(toolbar);
         getSupportFragmentManager().addOnBackStackChangedListener(this);
@@ -49,6 +46,12 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
         } else {
             onBackStackChanged();
         }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        unbindService(connection);
     }
 
     @Override
@@ -67,4 +70,38 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
         this.devices = devices;
         goButton.setEnabled(true);
     }
+
+    private JacketService.StatusListener statusListener;
+
+    @Override
+    public void setStatusListener(JacketService.StatusListener statusListener) {
+        this.statusListener = statusListener;
+    }
+
+    /** Defines callbacks for service binding, passed to bindService() */
+    private ServiceConnection connection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            Log.d(TAG, "onServiceConnected");
+            service = ((JacketService.JacketServiceBinder) binder).getService();
+            // pass through the listener from the DeviceFragment
+            service.setStatusListener(statusListener);
+            service.connect(devices);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            Log.d(TAG, "onServiceDisconnected");
+        }
+
+        @Override
+        public void onBindingDied(ComponentName name) {
+            Log.d(TAG, "onBindingDied");
+        }
+
+        @Override
+        public void onNullBinding(ComponentName name) {
+            Log.d(TAG, "onNullBinding");
+        }
+    };
 }
