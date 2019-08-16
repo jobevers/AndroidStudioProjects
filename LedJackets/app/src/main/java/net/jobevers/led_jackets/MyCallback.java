@@ -45,6 +45,12 @@ public class MyCallback extends BluetoothGattCallback {
     private int nextMessage;
 
 
+    public MyCallback(int idx) {
+        super();
+        this.idx = idx;
+        TAG = "MyCallback-" + idx;
+    }
+
     public MyCallback(int idx, ColorBox parent) {
         super();
         this.idx = idx;
@@ -287,7 +293,7 @@ public class MyCallback extends BluetoothGattCallback {
                 // We're finally connected!
                 connected = true;
                 wait = false;
-                parent.onConnection(this.idx);
+                //parent.onConnection(this.idx);
                 Log.d(TAG, "connected");
             }
         } else {
