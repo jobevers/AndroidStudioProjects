@@ -1,6 +1,7 @@
 package net.jobevers.led_jackets;
 
 import android.bluetooth.BluetoothDevice;
+import android.support.annotation.ColorInt;
 
 import java.util.List;
 
@@ -12,7 +13,7 @@ public class PatternGenerator extends PApplet {
     int hue = 0;
 
     public interface PatternDrawListener {
-        void onFrame(int hue);
+        void onFrame(int frameCount, @ColorInt int[] pixels);
     }
 
     // https://processing.org/reference/settings_.html
@@ -37,7 +38,7 @@ public class PatternGenerator extends PApplet {
             pixels[i] = color(hue, 255, 255);
         }
         updatePixels();
-        drawListener.onFrame(hue);
+        drawListener.onFrame(frameCount, pixels);
         hue = (hue + 2) % 256;
     }
 }

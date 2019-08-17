@@ -13,23 +13,35 @@ import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.support.annotation.ColorInt;
 import android.util.Log;
 
-import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+
+import static android.graphics.Color.colorToHSV;
 
 public class JacketService extends Service {
     // CCCD = client characteristic configuration
     private static final UUID BLUETOOTH_LE_CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final UUID BLUETOOTH_LE_CC254X_SERVICE = UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb");
     private static final UUID BLUETOOTH_LE_CC254X_CHAR_RW = UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb");
+    private static final int N_LEDS = 25;
+    // In a message, how many bytes are for the header
+    // The header is two bytes:
+    // First 4 bits are MSG_NUM {0,1}
+    // The next 4 bits are the frame increment (to speed up slow jackets)
+    // The Second byte is the frame count
+    private static final int HEADER_SIZE = 2;
 
     private String TAG = "JacketService";
     private List<BluetoothDevice> devices;
     private ArrayList<MyGattCallback> callbacks = new ArrayList<>();
     private StatusListener listener;
+    // Use this to post stuff back to the UI
+    private final Handler mainLooper;
 
     class JacketServiceBinder extends Binder {
         JacketService getService() {
@@ -39,11 +51,14 @@ public class JacketService extends Service {
 
     interface StatusListener {
         void setStatus(BluetoothDevice device, String status);
+
+        void onConnect();
     }
 
     private final IBinder binder;
 
     public JacketService() {
+        mainLooper = new Handler(Looper.getMainLooper());
         binder = new JacketServiceBinder();
     }
 
@@ -63,12 +78,44 @@ public class JacketService extends Service {
         this.listener = listener;
     }
 
+    private void setStatus(int idx, String status) {
+        BluetoothDevice dev = devices.get(idx);
+        mainLooper.post(() -> {
+            listener.setStatus(dev, status);
+        });
+        if (status == "CONNECTED") {
+            if (allDevicesConnected()) {
+                mainLooper.post(() -> {
+                    listener.onConnect();
+                });
+            }
+        }
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
         return binder;
     }
 
-    // This is a very thorough implementation of thse callbacks
+    public boolean allDevicesConnected() {
+        for (MyGattCallback cb : callbacks) {
+            if (!cb.isConnected()) {
+                Log.i(TAG, "Callback is disconnect: " + cb.TAG);
+                return false;
+            }
+        }
+        Log.i(TAG, "EVERYTHING IS CONNECTED");
+        return true;
+    }
+
+    public void sendFrame(int frame, @ColorInt int[] colors) {
+        for (int i = 0; i < callbacks.size(); i++) {
+            MyGattCallback cb = callbacks.get(i);
+            cb.sendFrame(frame, Arrays.copyOfRange(colors, i * 25, (i + 1) * 25));
+        }
+    }
+
+    // This is a very thorough implementation of these callbacks
     // https://github.com/RatioLabs/BLEService/blob/master/DeviceService/src/com/ratio/deviceService/BTLEDeviceManager.java#L490
     // and this seems decent as well:
     // https://intersog.com/blog/tech-tips/how-to-work-properly-with-bt-le-on-android/
@@ -89,24 +136,22 @@ public class JacketService extends Service {
         // generally want to wait until we get a confirmation message before sending
         // the next frame.  But if its been too long and were still connected, try again.
         private long waitOverride = Long.MAX_VALUE;
-        // keep track of continuous failure.  If this gets too high we'll disconnect
+        // keep track of consecutive failures.  If this gets too high we'll disconnect
         // to force a reconnect;
         private int failures = 0;
         // Each frame consists of 2 messages.  This gets set to 1 after we send the first message
         private int nextMessage;
 
-        private final Handler mainLooper;
+        private byte[] message0 = new byte[payloadSize];
+        private byte[] message1 = new byte[payloadSize];
 
         MyGattCallback(int idx) {
-            mainLooper = new Handler(Looper.getMainLooper());
             this.idx = idx;
             TAG = "MyGattCallback-" + idx;
         }
 
-        private void setStatus(String status) {
-            mainLooper.post(() -> {
-                listener.setStatus(devices.get(idx), status);
-            });
+        public boolean isConnected() {
+            return connected;
         }
 
         @Override
@@ -116,14 +161,16 @@ public class JacketService extends Service {
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 // if there was a status error, DO NOT EXECUTE ANYMORE COMMANDS ON THIS DEVICE, and disconnect from it.
                 gatt.disconnect();
-                setStatus("ERROR");
+                setStatus(idx, "ERROR");
             } else {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     Log.i(TAG, "calling discoverServices()");
+                    // Reset the failure count so that we don't accidently disconnect right after connecting
+                    failures = 0;
                     gatt.discoverServices();
-                    setStatus("DISCOVERING SERVICES");
+                    setStatus(idx, "DISCOVERING SERVICES");
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    setStatus("DISCONNECTED");
+                    setStatus(idx, "DISCONNECTED");
                     // Lets.. try to re-connect, I guess.
                     // TODO: add in a retry count
                     // TODO: add in a timer on connect because sometimes it just seems to fail
@@ -153,7 +200,6 @@ public class JacketService extends Service {
         // See https://stackoverflow.com/questions/22817005/why-does-setcharacteristicnotification-not-actually-enable-notifications
         // for an explanation for the last two.
         private void connectCharacteristics(BluetoothGatt gatt) {
-
             int writeProperties = characteristic.getProperties();
             if ((writeProperties & (BluetoothGattCharacteristic.PROPERTY_WRITE +     // Microbit,HM10-clone have WRITE
                     BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) == 0) { // HM10,TI uart have only WRITE_NO_RESPONSE
@@ -203,15 +249,9 @@ public class JacketService extends Service {
                     // We're finally connected!
                     connected = true;
                     wait = false;
-                    setStatus("CONNECTED");
+                    setStatus(idx, "CONNECTED");
                     //parent.onConnection(this.idx);
                     Log.d(TAG, "connected");
-                    // TODO: remove this code, but putting it in here so that
-                    // I can see some visual change
-                    characteristic.setValue(
-                            new byte[]{(byte) 0x00, (byte) 0xFF, (byte) 0xFF,
-                                    (byte) 0xFF, (byte) 0xFF});
-                    gatt.writeCharacteristic(characteristic);
                 }
             } else {
                 Log.d(TAG, "unknown write descriptor finished, status=" + status);
@@ -222,12 +262,6 @@ public class JacketService extends Service {
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
             super.onCharacteristicWrite(gatt, characteristic, status);
             Log.i(TAG, "onCharacteristicWrite");
-            // TODO: remove this code, but putting it in here so that
-            // I can see some visual change
-            characteristic.setValue(
-                    new byte[]{(byte) 0x01, (byte) 0xFF, (byte) 0xFF,
-                            (byte) 0xFF, (byte) 0xFF});
-            gatt.writeCharacteristic(characteristic);
         }
 
         @Override
@@ -235,13 +269,20 @@ public class JacketService extends Service {
             super.onCharacteristicChanged(gatt, characteristic);
             byte[] val = characteristic.getValue();
             Log.i(TAG, "onCharacteristicChanged: " + bytesToHex(val));
-            int msg = val[0] & 0xFF;
-            Log.i(TAG, "onCharacteristicChanged: msg: " + msg);
+            if (nextMessage == 0) {
+                // Turn off wait because we got a response and can now get the next frame
+                wait = false;
+            }
+            if (nextMessage == 1) {
+                sendMessage(1);
+            }
+            // TODO: actually check the response to see if it was for the right message
+            // and if we're supposed to allow the follow up message.
         }
 
         private final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
 
-        public String bytesToHex(byte[] bytes) {
+        private String bytesToHex(byte[] bytes) {
             char[] hexChars = new char[bytes.length * 2];
             for (int j = 0; j < bytes.length; j++) {
                 int v = bytes[j] & 0xFF;
@@ -249,6 +290,91 @@ public class JacketService extends Service {
                 hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
             }
             return new String(hexChars);
+        }
+
+        public void sendFrame(int frame, @ColorInt int[] colors) {
+            assert colors.length == N_LEDS;
+            if (!connected) {
+                Log.i(TAG, "Waiting to be connected");
+                return;
+            }
+            boolean shouldExit = false;
+            if (wait) {
+                // TODO: waiting is now expected behavior so its not worth logging when this happens
+                // unless its been a LONG time since we last sent a message.
+                return;
+            }
+            if (characteristic == null) {
+                // Shouldn't every get here, connected is set after characteristic.
+                Log.i(TAG, "Waiting for service discovery");
+                failures += 1;
+                shouldExit = true;
+            }
+            // TODO: really rethink what is a "failure"....
+            if (failures > 30) {
+                if (gatt != null) {
+                    Log.i(TAG, "We have had too many failures, lets disconnect");
+                    gatt.disconnect();
+                    connected = false;
+                }
+                return;
+            }
+            if (shouldExit) {
+                return;
+            }
+            failures = 0;
+            setMessage(frame, colors, 0, message0);
+            setMessage(frame, colors, 1, message1);
+            sendMessage(0);
+        }
+
+        private void setMessage(int frame, @ColorInt int[] colors, int offset, byte[] message) {
+            // First 4 bits are the message type, the last four bits are the frame increment
+            message[0] = (byte) ((offset << 4) | 0x01);
+            message[1] = (byte) frame;
+            // First message contains the even pixels (0, 2, 4..)
+            // Second message contains the odd pixels (1, 3, 5...)
+            // For some reason I convinced myself that interlaced is better
+            // But in the way the arduino is coded right now I wait
+            // for the entire frame to be received, so it doesn't really matter.
+            // Maybe some point in the future I could be more clever....
+            float[] hsv = new float[3];
+            for (int i = 0; (2 * i + offset) < N_LEDS; i++) {
+                colorToHSV(colors[i], hsv);
+                message[i + HEADER_SIZE] = packHSV(hsv);
+            }
+        }
+
+        public byte packHSV(float[] hsv) {
+            // hue is [0-360]
+            // sat is [0-1]
+            // val is [0-1]
+            byte hue = (byte) (hsv[0] * 255 / 360);
+            byte sat = (byte) (hsv[1] * 255);
+            byte val = (byte) (hsv[2] * 255);
+            return pack(hue, sat, val);
+        }
+
+        public byte pack(byte hue, byte sat, byte val) {
+            // Grab 4 most significant bits of the hue
+            // The 2 most significant bits of the sat / val
+            // The latter two need to be shifted 4 and 6 bits respectively
+            // The end result is 8 bits: hhhhssvv.
+            return (byte) ((hue & 0xF0) | ((sat & 0xC0) >> 4) | ((val & 0xC0) >> 6));
+        }
+
+        private void sendMessage(int msgN) {
+            assert msgN == nextMessage;
+            byte[] data = msgN == 0 ? message0 : message1;
+            characteristic.setValue(data);
+            Log.i(TAG, "Writing msg: " + bytesToHex(data));
+            wait = true;
+            waitOverride = System.currentTimeMillis() + 1000;
+            nextMessage = (msgN + 1) % 2;
+            gatt.writeCharacteristic(characteristic);
+            // TODO: a queue or message array would be better here so that
+            // I know that I'm not overwhelming the writeCharacteristic
+            // and should wait until onCharacteristicWrite has finished
         }
 
     }

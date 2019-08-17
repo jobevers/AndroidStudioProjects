@@ -13,5 +13,6 @@
     <string name="three">Three</string>
     <string name="two">Two</string>
     <string name="how_many_jackets">How Many Jackets?</string>
-    <string name="go">Go</string>
+    <string name="go">Connect</string>
+    <string name="play">Play</string>
 </resources>

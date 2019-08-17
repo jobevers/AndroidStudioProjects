@@ -44,7 +44,7 @@ public class ColorBox extends AppCompatActivity implements PatternGenerator.Patt
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.color_box);
-        frame = findViewById(R.id.frame_layout);
+        frame = findViewById(R.id.processing_frame);
 
         if (savedInstanceState == null) {
             BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
@@ -119,6 +119,11 @@ public class ColorBox extends AppCompatActivity implements PatternGenerator.Patt
             }
             nextKeyFrame += KEY_FRAME_DURATION;
         }
+    }
+
+    @Override
+    public void onFrame(int frameCount, int[] pixels) {
+        int x = 1 / 0;
     }
 
 //    Runnable mColorSetter = new Runnable() {

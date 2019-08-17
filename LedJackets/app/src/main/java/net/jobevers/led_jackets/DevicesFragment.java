@@ -226,6 +226,8 @@ public class DevicesFragment extends ListFragment {
         filters.add(new ScanFilter.Builder().setDeviceName("FRANCINE2").build());
         filters.add(new ScanFilter.Builder().setDeviceName("FRANCINE3").build());
         filters.add(new ScanFilter.Builder().setDeviceName("FRANCINE4").build());
+        // FRANCINE5 is used for testing
+        filters.add(new ScanFilter.Builder().setDeviceName("FRANCINE5").build());
 
         HashSet<String> foundDevices = new HashSet<>();
 
@@ -299,6 +301,9 @@ public class DevicesFragment extends ListFragment {
             }
             listAdapter.notifyDataSetChanged();
         }
+
+        @Override
+        public void onConnect() { }
     };
 
     private void updateScan(BluetoothDevice device) {
