@@ -9,9 +9,9 @@ import java.util.concurrent.TimeUnit;
 
 import processing.core.PApplet;
 
-public class PatternGenerator extends PApplet {
+public class PatternDisplay extends PApplet {
 
-    String TAG = "PatternGenerator";
+    String TAG = "PatternDisplay";
     long lastTime = 0;
     PatternDrawListener drawListener;
     int hue = 0;

@@ -5,7 +5,6 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -18,7 +17,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -30,7 +28,7 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
     private Button goButton;
     private List<BluetoothDevice> devices;
     private JacketService service;
-    private PatternGenerator patternGenerator;
+    private PatternDisplay patternDisplay;
     FrameLayout processingFrame;
 
     @Override
@@ -100,16 +98,16 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
                 Log.i(TAG, "EVERYTHING IS CONNECTED");
                 // This code is from the example at
                 // https://android.processing.org/tutorials/android_studio/index.html
-                patternGenerator = new PatternGenerator();
-                patternGenerator.setDrawListener(drawListener);
-                PFragment fragment = new PFragment(patternGenerator);
+                patternDisplay = new PatternDisplay();
+                patternDisplay.setDrawListener(drawListener);
+                PFragment fragment = new PFragment(patternDisplay);
                 fragment.setView(processingFrame, ScanActivity.this);
             });
         }
     };
 
     // This is kind of dumb, could just make the service a drawListener.
-    private PatternGenerator.PatternDrawListener drawListener = new PatternGenerator.PatternDrawListener() {
+    private PatternDisplay.PatternDrawListener drawListener = new PatternDisplay.PatternDrawListener() {
         @Override
         public void onFrame(int frameCount, int[] pixels) {
             service.sendFrame(frameCount, pixels);
