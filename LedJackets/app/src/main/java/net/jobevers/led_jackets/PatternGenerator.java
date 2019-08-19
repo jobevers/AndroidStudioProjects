@@ -2,13 +2,17 @@ package net.jobevers.led_jackets;
 
 import android.bluetooth.BluetoothDevice;
 import android.support.annotation.ColorInt;
+import android.util.Log;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import processing.core.PApplet;
 
 public class PatternGenerator extends PApplet {
 
+    String TAG = "PatternGenerator";
+    long lastTime = 0;
     PatternDrawListener drawListener;
     int hue = 0;
 
@@ -33,12 +37,21 @@ public class PatternGenerator extends PApplet {
     }
 
     public void draw() {
+        long now = System.currentTimeMillis();
+        long diff = now - lastTime;
+        double rate = 1000.0 / diff;
+        lastTime = now;
+        @ColorInt int c = color(hue, 255, 255);
         loadPixels();
         for (int i=0; i<pixels.length; i++) {
-            pixels[i] = color(hue, 255, 255);
+            pixels[i] = c;
         }
         updatePixels();
         drawListener.onFrame(frameCount, pixels);
         hue = (hue + 2) % 256;
+        long end = System.currentTimeMillis();
+        if (end - now > 33) {
+            Log.w(TAG, "Frame took: " + (end - now) + "ms. It should be <33ms");
+        }
     }
 }

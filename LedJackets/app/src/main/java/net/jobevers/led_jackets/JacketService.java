@@ -33,8 +33,8 @@ public class JacketService extends Service {
     // The header is two bytes:
     // First 4 bits are MSG_NUM {0,1}
     // The next 4 bits are the frame increment (to speed up slow jackets)
-    // The Second byte is the frame count
-    private static final int HEADER_SIZE = 2;
+    // The second & third byte is the frame count
+    private static final int HEADER_SIZE = 3;
 
     private String TAG = "JacketService";
     private List<BluetoothDevice> devices;
@@ -111,7 +111,8 @@ public class JacketService extends Service {
     public void sendFrame(int frame, @ColorInt int[] colors) {
         for (int i = 0; i < callbacks.size(); i++) {
             MyGattCallback cb = callbacks.get(i);
-            cb.sendFrame(frame, Arrays.copyOfRange(colors, i * 25, (i + 1) * 25));
+            // TODO: actually send frames per jacket
+            cb.sendFrame(frame, Arrays.copyOfRange(colors, 0, 25));
         }
     }
 
@@ -269,6 +270,22 @@ public class JacketService extends Service {
             super.onCharacteristicChanged(gatt, characteristic);
             byte[] val = characteristic.getValue();
             Log.i(TAG, "onCharacteristicChanged: " + bytesToHex(val));
+            // TODO: the first byte is the message type.
+            // TODO: the next two bytes are the frame number that the arduino is on
+            // javas lack of an unsigned byte is SO annoying
+            int frameNum = ((val[1] & 0xFF) << 8) | (val[2] & 0xFF);
+            Log.i(TAG, "Received frame " + frameNum);
+            if (frameNum < 0) {
+                Log.w(TAG, "frameNum IS NEGATIVE: " + frameNum + ", " + Integer.toHexString(frameNum));
+            }
+            // TODO: the 4th byte is a 1 or a zero
+            if (val[3] == 1) {
+                // this means that there was an error on the android end. Either the buffer was full
+                // or a message was received out of order.
+                // So, this means that we need to reset and NOT send message1.
+                Log.i(TAG, "Error on arduino. Resetting to message0");
+                nextMessage = 0;
+            }
             if (nextMessage == 0) {
                 // Turn off wait because we got a response and can now get the next frame
                 wait = false;
@@ -291,6 +308,7 @@ public class JacketService extends Service {
             }
             return new String(hexChars);
         }
+        int lastFrame = 0;
 
         public void sendFrame(int frame, @ColorInt int[] colors) {
             assert colors.length == N_LEDS;
@@ -323,6 +341,11 @@ public class JacketService extends Service {
                 return;
             }
             failures = 0;
+            Log.i(TAG, "Sending Frame " + frame);
+            if (lastFrame > frame) {
+                Log.w(TAG, "FRAME NUMBER IS GOING BACKWARDS " + lastFrame + ">" + frame);
+            }
+            lastFrame = frame;
             setMessage(frame, colors, 0, message0);
             setMessage(frame, colors, 1, message1);
             sendMessage(0);
@@ -331,7 +354,10 @@ public class JacketService extends Service {
         private void setMessage(int frame, @ColorInt int[] colors, int offset, byte[] message) {
             // First 4 bits are the message type, the last four bits are the frame increment
             message[0] = (byte) ((offset << 4) | 0x01);
-            message[1] = (byte) frame;
+            // TODO: if frame > 0xFFFF (65,535) then we should error or something so that
+            //       we know to restart
+            message[1] = (byte) ((frame & 0xFF00) >> 8);
+            message[2] = (byte) (frame & 0x00FF);
             // First message contains the even pixels (0, 2, 4..)
             // Second message contains the odd pixels (1, 3, 5...)
             // For some reason I convinced myself that interlaced is better
