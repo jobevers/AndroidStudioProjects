@@ -20,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 public class MyCallback extends BluetoothGattCallback {
     private String TAG;
     private int idx;
-    private ColorBox parent;
 
     // Copied from LeTerminal, but MTU will really always be 23.
     private static final int MAX_MTU = 512; // BLE standard does not limit, some BLE 4.2 devices support 251, various source say that Android has max 512
@@ -48,13 +47,6 @@ public class MyCallback extends BluetoothGattCallback {
     public MyCallback(int idx) {
         super();
         this.idx = idx;
-        TAG = "MyCallback-" + idx;
-    }
-
-    public MyCallback(int idx, ColorBox parent) {
-        super();
-        this.idx = idx;
-        this.parent = parent;
         TAG = "MyCallback-" + idx;
     }
 

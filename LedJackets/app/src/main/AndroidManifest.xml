@@ -15,11 +15,14 @@
         android:theme="@style/AppTheme"
         tools:ignore="AllowBackup,GoogleAppIndexingWarning">
         <service
-            android:name=".JacketService"
+            android:name=".PatternService"
             android:enabled="true"
             android:exported="true"></service>
+        <service
+            android:name=".JacketService"
+            android:enabled="true"
+            android:exported="true" />
 
-        <activity android:name=".ColorBox" />
         <activity
             android:name=".MainActivity"
             android:label="@string/app_name"

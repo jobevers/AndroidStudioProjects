@@ -20,6 +20,25 @@ public class PatternGenerator extends PApplet {
         void onFrame(int frameCount, @ColorInt int[] pixels);
     }
 
+    @Override
+    public void onPause() {
+        super.onPause();
+        Log.i(TAG, "onPause");
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        Log.i(TAG, "onStop");
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        Log.i(TAG, "onDestroy");
+    }
+
+
     // https://processing.org/reference/settings_.html
     // settings is only needed because I'm not in the
     // processing IDE.
