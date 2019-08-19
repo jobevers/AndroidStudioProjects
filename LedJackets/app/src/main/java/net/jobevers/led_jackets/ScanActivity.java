@@ -41,7 +41,7 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
         goButton.setEnabled(false);
         goButton.setOnClickListener((View v) -> {
             Log.d(TAG, "GO BUTTON clicked.  Creating service for devices!");
-            bindService(new Intent(this, JacketService.class), connection, Context.BIND_AUTO_CREATE);
+            bindService(new Intent(this, JacketService.class), jacketConnection, Context.BIND_AUTO_CREATE);
             // Now, wait until we're all connected
             goButton.setEnabled(false);
         });
@@ -62,7 +62,7 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
     protected void onStop() {
         super.onStop();
         if (service != null) {
-            unbindService(connection);
+            unbindService(jacketConnection);
         }
     }
 
@@ -125,7 +125,7 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
     /**
      * Defines callbacks for service binding, passed to bindService()
      */
-    private ServiceConnection connection = new ServiceConnection() {
+    private ServiceConnection jacketConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder binder) {
             Log.d(TAG, "onServiceConnected");
