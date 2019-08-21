@@ -42,6 +42,7 @@ public class JacketService extends Service {
     private StatusListener listener;
     // Use this to post stuff back to the UI
     private final Handler mainLooper;
+    private PatternService patternService;
 
     class JacketServiceBinder extends Binder {
         JacketService getService() {
@@ -108,7 +109,7 @@ public class JacketService extends Service {
         return true;
     }
 
-    public void sendFrame(int frame, @ColorInt int[] colors) {
+    public void sendFrame(int frame, HSV[] colors) {
         for (int i = 0; i < callbacks.size(); i++) {
             MyGattCallback cb = callbacks.get(i);
             // TODO: actually send frames per jacket
@@ -163,6 +164,7 @@ public class JacketService extends Service {
                 // if there was a status error, DO NOT EXECUTE ANYMORE COMMANDS ON THIS DEVICE, and disconnect from it.
                 gatt.disconnect();
                 setStatus(idx, "ERROR");
+                int x = 1 / 0;
             } else {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     Log.i(TAG, "calling discoverServices()");
@@ -310,7 +312,7 @@ public class JacketService extends Service {
         }
         int lastFrame = 0;
 
-        public void sendFrame(int frame, @ColorInt int[] colors) {
+        public void sendFrame(int frame, HSV[] colors) {
             assert colors.length == N_LEDS;
             if (!connected) {
                 Log.i(TAG, "Waiting to be connected");
@@ -351,7 +353,7 @@ public class JacketService extends Service {
             sendMessage(0);
         }
 
-        private void setMessage(int frame, @ColorInt int[] colors, int offset, byte[] message) {
+        private void setMessage(int frame, HSV[] colors, int offset, byte[] message) {
             // First 4 bits are the message type, the last four bits are the frame increment
             message[0] = (byte) ((offset << 4) | 0x01);
             // TODO: if frame > 0xFFFF (65,535) then we should error or something so that
@@ -364,29 +366,10 @@ public class JacketService extends Service {
             // But in the way the arduino is coded right now I wait
             // for the entire frame to be received, so it doesn't really matter.
             // Maybe some point in the future I could be more clever....
-            float[] hsv = new float[3];
             for (int i = 0; (2 * i + offset) < N_LEDS; i++) {
-                colorToHSV(colors[i], hsv);
-                message[i + HEADER_SIZE] = packHSV(hsv);
+                HSV hsv = colors[i];
+                message[i + HEADER_SIZE] = hsv.pack();
             }
-        }
-
-        public byte packHSV(float[] hsv) {
-            // hue is [0-360]
-            // sat is [0-1]
-            // val is [0-1]
-            byte hue = (byte) (hsv[0] * 255 / 360);
-            byte sat = (byte) (hsv[1] * 255);
-            byte val = (byte) (hsv[2] * 255);
-            return pack(hue, sat, val);
-        }
-
-        public byte pack(byte hue, byte sat, byte val) {
-            // Grab 4 most significant bits of the hue
-            // The 2 most significant bits of the sat / val
-            // The latter two need to be shifted 4 and 6 bits respectively
-            // The end result is 8 bits: hhhhssvv.
-            return (byte) ((hue & 0xF0) | ((sat & 0xC0) >> 4) | ((val & 0xC0) >> 6));
         }
 
         private void sendMessage(int msgN) {

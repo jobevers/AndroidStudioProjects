@@ -27,7 +27,8 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
     private String TAG = "ScanActivity";
     private Button goButton;
     private List<BluetoothDevice> devices;
-    private JacketService service;
+    private JacketService jacketService;
+    private PatternService patternService;
     private PatternDisplay patternDisplay;
     FrameLayout processingFrame;
 
@@ -40,7 +41,7 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
         goButton = findViewById(R.id.go_button);
         goButton.setEnabled(false);
         goButton.setOnClickListener((View v) -> {
-            Log.d(TAG, "GO BUTTON clicked.  Creating service for devices!");
+            Log.d(TAG, "GO BUTTON clicked.  Creating jacketService for devices!");
             bindService(new Intent(this, JacketService.class), jacketConnection, Context.BIND_AUTO_CREATE);
             // Now, wait until we're all connected
             goButton.setEnabled(false);
@@ -61,8 +62,12 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
     @Override
     protected void onStop() {
         super.onStop();
-        if (service != null) {
+        Log.i(TAG, "scanActivity: stopping services");
+        if (jacketService != null) {
             unbindService(jacketConnection);
+        }
+        if (patternService != null) {
+            unbindService(patternConnection);
         }
     }
 
@@ -99,18 +104,23 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
                 // This code is from the example at
                 // https://android.processing.org/tutorials/android_studio/index.html
                 patternDisplay = new PatternDisplay();
-                patternDisplay.setDrawListener(drawListener);
                 PFragment fragment = new PFragment(patternDisplay);
                 fragment.setView(processingFrame, ScanActivity.this);
+                Log.d(TAG, "PLAY BUTTON clicked.  Creating PatternService for devices!");
+                bindService(
+                        new Intent(ScanActivity.this, PatternService.class),
+                        patternConnection, Context.BIND_AUTO_CREATE);
+                // Now, wait until we're all connected
+                goButton.setEnabled(false);
             });
         }
     };
 
-    // This is kind of dumb, could just make the service a drawListener.
-    private PatternDisplay.PatternDrawListener drawListener = new PatternDisplay.PatternDrawListener() {
+    // This is kind of dumb, could just make the jacketService a drawListener.
+    private PatternService.PatternDrawListener drawListener = new PatternService.PatternDrawListener() {
         @Override
-        public void onFrame(int frameCount, int[] pixels) {
-            service.sendFrame(frameCount, pixels);
+        public void onFrame(int frameCount, HSV[] pixels) {
+            jacketService.sendFrame(frameCount, pixels);
         }
     };
 
@@ -123,63 +133,39 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
     }
 
     /**
-     * Defines callbacks for service binding, passed to bindService()
+     * Defines callbacks for jacketService binding, passed to bindService()
      */
     private ServiceConnection jacketConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder binder) {
-            Log.d(TAG, "onServiceConnected");
-            service = ((JacketService.JacketServiceBinder) binder).getService();
-            // Listen to status updates from the service
-            service.setStatusListener(statusListener);
-            service.connect(devices);
+            Log.d(TAG, "onJacketServiceConnected");
+            jacketService = ((JacketService.JacketServiceBinder) binder).getService();
+            // Listen to status updates from the jacketService
+            jacketService.setStatusListener(statusListener);
+            jacketService.connect(devices);
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
             Log.d(TAG, "onServiceDisconnected");
-            service = null;
-        }
-
-        @Override
-        public void onBindingDied(ComponentName name) {
-            Log.d(TAG, "onBindingDied");
-        }
-
-        @Override
-        public void onNullBinding(ComponentName name) {
-            Log.d(TAG, "onNullBinding");
+            jacketService = null;
         }
     };
 
-    void sendTestData() {
-        // TODO: will actually want to start processing
-        // and let it send frames, but I just want... something
-        @ColorInt int[] colors = {
-                Color.RED, Color.RED, Color.RED, Color.RED, Color.RED,
-                Color.RED, Color.RED, Color.RED, Color.RED, Color.RED,
-                Color.RED, Color.RED, Color.RED, Color.RED, Color.RED,
-                Color.RED, Color.RED, Color.RED, Color.RED, Color.RED,
-                Color.RED, Color.RED, Color.RED, Color.RED, Color.RED,
-        };
-        try {
-            service.sendFrame(1, colors);
-            TimeUnit.MILLISECONDS.sleep(1000);
-            service.sendFrame(30, colors);
-            TimeUnit.MILLISECONDS.sleep(1000);
-            service.sendFrame(60, colors);
-            TimeUnit.MILLISECONDS.sleep(1000);
-            service.sendFrame(90, colors);
-            TimeUnit.MILLISECONDS.sleep(1000);
-            for (int i = 0; i < 25; i++) {
-                colors[i] = Color.GREEN;
-            }
-            service.sendFrame(120, colors);
-            TimeUnit.MILLISECONDS.sleep(1000);
-            service.sendFrame(150, colors);
-            TimeUnit.MILLISECONDS.sleep(1000);
-        } catch (Exception ex) {
-
+    private ServiceConnection patternConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            Log.d(TAG, "onPatternServiceConnected");
+            patternService = ((PatternService.PatternServiceBinder) binder).getService();
+            // create patterns and send the frames back up.
+            patternService.addDrawListener(drawListener);
+            patternService.run(devices.size());
         }
-    }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            Log.d(TAG, "onServiceDisconnected");
+            patternService = null;
+        }
+    };
 }

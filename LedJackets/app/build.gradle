@@ -4,7 +4,7 @@ android {
     compileSdkVersion 28
     defaultConfig {
         targetSdkVersion 28
-        minSdkVersion 23
+        minSdkVersion 28
         vectorDrawables.useSupportLibrary true
 
         applicationId "net.jobevers.led_jackets"
