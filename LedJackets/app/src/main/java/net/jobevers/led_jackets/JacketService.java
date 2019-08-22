@@ -11,19 +11,20 @@ import android.bluetooth.BluetoothProfile;
 import android.content.Intent;
 import android.os.Binder;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
-import android.support.annotation.ColorInt;
+import android.os.Message;
 import android.util.Log;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import static android.graphics.Color.colorToHSV;
-
 public class JacketService extends Service {
+    private final String CONNECTED = "CONNECTED";
     // CCCD = client characteristic configuration
     private static final UUID BLUETOOTH_LE_CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final UUID BLUETOOTH_LE_CC254X_SERVICE = UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb");
@@ -52,7 +53,6 @@ public class JacketService extends Service {
 
     interface StatusListener {
         void setStatus(BluetoothDevice device, String status);
-
         void onConnect();
     }
 
@@ -63,16 +63,39 @@ public class JacketService extends Service {
         binder = new JacketServiceBinder();
     }
 
+    public void setPatternService(PatternService ps) {
+        patternService = ps;
+    }
+
+    @Override
+    public void onDestroy() {
+        for (MyGattCallback cb : callbacks) {
+            cb.disposeHandler();
+        }
+    }
+
     public void connect(List<BluetoothDevice> devices) {
         Log.d(TAG, "Connect");
         this.devices = devices;
         // need to set the listener before connecting
         for (int i = 0; i < devices.size(); i++) {
             BluetoothDevice dev = devices.get(i);
-            MyGattCallback callback = new MyGattCallback(i);
+            MyGattCallback callback = new MyGattCallback(i, 0);
             callbacks.add(callback);
             dev.connectGatt(this, false, callback);
         }
+    }
+
+    // TODO: add in a delay
+    private void reconnect(int idx) {
+        mainLooper.post(() -> {
+            Log.i(TAG, "Attempting to reconnect on device: " + idx);
+            BluetoothDevice dev = devices.get(idx);
+            int version = callbacks.get(idx).version;
+            MyGattCallback callback = new MyGattCallback(idx, version + 1);
+            callbacks.set(idx, callback);
+            dev.connectGatt(this, false, callback);
+        });
     }
 
     public void setStatusListener(StatusListener listener) {
@@ -84,13 +107,22 @@ public class JacketService extends Service {
         mainLooper.post(() -> {
             listener.setStatus(dev, status);
         });
-        if (status == "CONNECTED") {
+        if (status == CONNECTED) {
             if (allDevicesConnected()) {
                 mainLooper.post(() -> {
                     listener.onConnect();
                 });
             }
         }
+    }
+
+    private void resetPattern(HSV color) {
+        mainLooper.post(() -> {
+            patternService.triggerReset();
+            for (MyGattCallback cb: callbacks) {
+                cb.sendReset(color);
+            }
+        });
     }
 
     @Override
@@ -101,7 +133,7 @@ public class JacketService extends Service {
     public boolean allDevicesConnected() {
         for (MyGattCallback cb : callbacks) {
             if (!cb.isConnected()) {
-                Log.i(TAG, "Callback is disconnect: " + cb.TAG);
+                Log.i(TAG, "Callback is disconnected: " + cb.TAG);
                 return false;
             }
         }
@@ -110,10 +142,15 @@ public class JacketService extends Service {
     }
 
     public void sendFrame(int frame, HSV[] colors) {
-        for (int i = 0; i < callbacks.size(); i++) {
-            MyGattCallback cb = callbacks.get(i);
-            // TODO: actually send frames per jacket
-            cb.sendFrame(frame, Arrays.copyOfRange(colors, 0, 25));
+        if (frame > 100) {
+            // TODO: this is just temporary for testing
+            resetPattern(new HSV(255, 255, 255));
+        } else {
+            for (int i = 0; i < callbacks.size(); i++) {
+                MyGattCallback cb = callbacks.get(i);
+                // TODO: actually send frames per jacket
+                cb.sendFrame(frame, Arrays.copyOfRange(colors, 0, 25));
+            }
         }
     }
 
@@ -126,9 +163,10 @@ public class JacketService extends Service {
     // are called on.
     // I'm currently only sending data, waiting for a response, sending data
     // etc. so I should be okay.
-    class MyGattCallback extends BluetoothGattCallback {
+    class MyGattCallback extends BluetoothGattCallback implements Handler.Callback {
         private String TAG;
         private int idx;
+        private int version;
 
         private int payloadSize = 20;
         BluetoothGattCharacteristic characteristic;
@@ -142,15 +180,47 @@ public class JacketService extends Service {
         // to force a reconnect;
         private int failures = 0;
         // Each frame consists of 2 messages.  This gets set to 1 after we send the first message
-        private int nextMessage;
+        //private int nextMessage;
+        // set to true if the connection handler should close when we disconnect
+        // otherwise we'll try to reconnect.
+        private boolean closeOnDisconnect = false;
 
-        private byte[] message0 = new byte[payloadSize];
-        private byte[] message1 = new byte[payloadSize];
+        private ArrayDeque<byte[]> messages = new ArrayDeque<>();
+//        private byte[] message0 = new byte[payloadSize];
+//        private byte[] message1 = new byte[payloadSize];
+        Handler bleHandler;
 
-        MyGattCallback(int idx) {
+
+        MyGattCallback(int idx, int version) {
             this.idx = idx;
-            TAG = "MyGattCallback-" + idx;
+            this.version = version;
+            TAG = "MyGattCallback-" + idx + ":" + version;
+            // Want all actual work to happen using a handler thread so that
+            // The BLE response is fast.
+            HandlerThread handlerThread = new HandlerThread("BLE-Worker");
+            handlerThread.start();
+            bleHandler = new Handler(handlerThread.getLooper(), this);
         }
+
+        private void disconnectAndClose() {
+            Log.d(TAG, "disconnectAndClose()");
+            closeOnDisconnect = true;
+            // TODO: trigger a timer here just in-case
+            //       nothing happens in onConnectionStateChange
+            gatt.disconnect();
+        }
+
+        public void disposeHandler() {
+            Log.d(TAG, "disposeHandler()");
+            bleHandler.removeCallbacksAndMessages(null);
+            bleHandler.getLooper().quit();
+        }
+        final int MSG_DISCOVER_SERVICES = 0;
+        final int MSG_ERROR_STATUS = 1;
+        final int MSG_READ = 2;
+        final int MSG_ENQUEUE = 3;
+        final int MSG_REPLACE = 4;
+        final int MSG_SEND = 5;
 
         public boolean isConnected() {
             return connected;
@@ -160,27 +230,27 @@ public class JacketService extends Service {
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
             Log.i(TAG, "onConnectionStateChange status = " + status + " state = " + newState);
             characteristic = null;
+            connected = false;
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 // if there was a status error, DO NOT EXECUTE ANYMORE COMMANDS ON THIS DEVICE, and disconnect from it.
-                gatt.disconnect();
-                setStatus(idx, "ERROR");
-                int x = 1 / 0;
+                bleHandler.obtainMessage(MSG_ERROR_STATUS, gatt).sendToTarget();
             } else {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    Log.i(TAG, "calling discoverServices()");
-                    // Reset the failure count so that we don't accidently disconnect right after connecting
-                    failures = 0;
-                    gatt.discoverServices();
-                    setStatus(idx, "DISCOVERING SERVICES");
+                    bleHandler.obtainMessage(MSG_DISCOVER_SERVICES, gatt).sendToTarget();
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    setStatus(idx, "DISCONNECTED");
-                    // Lets.. try to re-connect, I guess.
-                    // TODO: add in a retry count
-                    // TODO: add in a timer on connect because sometimes it just seems to fail
-                    connected = false;
-                    waitOverride = Integer.MAX_VALUE;
-                    Log.i(TAG, "calling gatt.connect()");
-                    gatt.connect();
+                    if (closeOnDisconnect) {
+                        setStatus(idx, "CLOSING");
+                        gatt.close();
+                        disposeHandler();
+                    } else {
+                        setStatus(idx, "DISCONNECTED");
+                        // Lets.. try to re-connect, I guess.
+                        // TODO: add in a retry count
+                        // TODO: add in a timer on connect because sometimes it just seems to fail
+                        waitOverride = Integer.MAX_VALUE;
+                        Log.i(TAG, "calling gatt.connect()");
+                        gatt.connect();
+                    }
                 }
             }
         }
@@ -252,7 +322,7 @@ public class JacketService extends Service {
                     // We're finally connected!
                     connected = true;
                     wait = false;
-                    setStatus(idx, "CONNECTED");
+                    setStatus(idx, CONNECTED);
                     //parent.onConnection(this.idx);
                     Log.d(TAG, "connected");
                 }
@@ -271,32 +341,7 @@ public class JacketService extends Service {
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             super.onCharacteristicChanged(gatt, characteristic);
             byte[] val = characteristic.getValue();
-            Log.i(TAG, "onCharacteristicChanged: " + bytesToHex(val));
-            // TODO: the first byte is the message type.
-            // TODO: the next two bytes are the frame number that the arduino is on
-            // javas lack of an unsigned byte is SO annoying
-            int frameNum = ((val[1] & 0xFF) << 8) | (val[2] & 0xFF);
-            Log.i(TAG, "Received frame " + frameNum);
-            if (frameNum < 0) {
-                Log.w(TAG, "frameNum IS NEGATIVE: " + frameNum + ", " + Integer.toHexString(frameNum));
-            }
-            // TODO: the 4th byte is a 1 or a zero
-            if (val[3] == 1) {
-                // this means that there was an error on the android end. Either the buffer was full
-                // or a message was received out of order.
-                // So, this means that we need to reset and NOT send message1.
-                Log.i(TAG, "Error on arduino. Resetting to message0");
-                nextMessage = 0;
-            }
-            if (nextMessage == 0) {
-                // Turn off wait because we got a response and can now get the next frame
-                wait = false;
-            }
-            if (nextMessage == 1) {
-                sendMessage(1);
-            }
-            // TODO: actually check the response to see if it was for the right message
-            // and if we're supposed to allow the follow up message.
+            bleHandler.obtainMessage(MSG_READ, val).sendToTarget();
         }
 
         private final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
@@ -315,7 +360,7 @@ public class JacketService extends Service {
         public void sendFrame(int frame, HSV[] colors) {
             assert colors.length == N_LEDS;
             if (!connected) {
-                Log.i(TAG, "Waiting to be connected");
+                Log.d(TAG, "Waiting to be connected");
                 return;
             }
             boolean shouldExit = false;
@@ -348,13 +393,14 @@ public class JacketService extends Service {
                 Log.w(TAG, "FRAME NUMBER IS GOING BACKWARDS " + lastFrame + ">" + frame);
             }
             lastFrame = frame;
-            setMessage(frame, colors, 0, message0);
-            setMessage(frame, colors, 1, message1);
-            sendMessage(0);
+            queueMessage(frame, colors, 0);
+            queueMessage(frame, colors, 1);
+            sendMessage();
         }
 
-        private void setMessage(int frame, HSV[] colors, int offset, byte[] message) {
-            // First 4 bits are the message type, the last four bits are the frame increment
+        private void queueMessage(int frame, HSV[] colors, int offset) {
+            byte[] message = new byte[payloadSize];
+            // First 4 bits are the message type, the last four bits are unused
             message[0] = (byte) ((offset << 4) | 0x01);
             // TODO: if frame > 0xFFFF (65,535) then we should error or something so that
             //       we know to restart
@@ -370,21 +416,105 @@ public class JacketService extends Service {
                 HSV hsv = colors[i];
                 message[i + HEADER_SIZE] = hsv.pack();
             }
+            bleHandler.obtainMessage(MSG_ENQUEUE, message).sendToTarget();
         }
 
-        private void sendMessage(int msgN) {
-            assert msgN == nextMessage;
-            byte[] data = msgN == 0 ? message0 : message1;
-            characteristic.setValue(data);
-            Log.i(TAG, "Writing msg: " + bytesToHex(data));
-            wait = true;
-            waitOverride = System.currentTimeMillis() + 1000;
-            nextMessage = (msgN + 1) % 2;
-            gatt.writeCharacteristic(characteristic);
-            // TODO: a queue or message array would be better here so that
-            // I know that I'm not overwhelming the writeCharacteristic
-            // and should wait until onCharacteristicWrite has finished
+        private void sendReset(HSV color) {
+            Log.i(TAG, "SENDING RESET MSG");
+            // part of being reset is the the frame number is reset to zero
+            lastFrame = 0;
+            byte[] data = new byte[20];
+            data[0] = (byte) ((2 << 4) | 0x00);
+            data[1] = (byte)0x00;
+            data[2] = (byte)0x00;
+            data[3] = (byte)color.hue;
+            data[4] = (byte)color.saturation;
+            data[5] = (byte)color.value;
+            bleHandler.obtainMessage(MSG_REPLACE, data).sendToTarget();
+            if (!wait) {
+                bleHandler.obtainMessage(MSG_SEND, null).sendToTarget();
+            }
         }
 
+        private void sendMessage() {
+            bleHandler.obtainMessage(MSG_SEND, null).sendToTarget();
+        }
+
+        @Override
+        public boolean handleMessage(Message msg) {
+            Log.d(TAG, "handleMessage()");
+            switch (msg.what) {
+                case MSG_DISCOVER_SERVICES: {
+                    BluetoothGatt gatt = ((BluetoothGatt) msg.obj);
+                    Log.i(TAG, "calling discoverServices()");
+                    // Reset the failure count so that we don't accidentally disconnect right after connecting
+                    failures = 0;
+                    gatt.discoverServices();
+                    setStatus(idx, "DISCOVERING SERVICES");
+                    return true;
+                }
+                case MSG_ERROR_STATUS: {
+                    BluetoothGatt gatt = ((BluetoothGatt) msg.obj);
+                    // Is there a time I would close without
+                    // disposing the handler?
+                    gatt.close();
+                    disposeHandler();
+                    setStatus(idx, "ERROR");
+                    if (!closeOnDisconnect) {
+                        reconnect(this.idx);
+                    }
+                    return true;
+                }
+                case MSG_READ: {
+                    byte[] val = ((byte[]) msg.obj);
+                    Log.i(TAG, "onCharacteristicChanged: " + bytesToHex(val));
+                    // TODO: the first byte is the message type.
+                    // TODO: the next two bytes are the frame number that the arduino is on
+                    // javas lack of an unsigned byte is SO annoying
+                    int frameNum = ((val[1] & 0xFF) << 8) | (val[2] & 0xFF);
+                    Log.i(TAG, "Received frame " + frameNum);
+                    if (frameNum < 0) {
+                        Log.w(TAG, "frameNum IS NEGATIVE: " + frameNum + ", " + Integer.toHexString(frameNum));
+                    }
+                    // TODO: the 4th byte is a 1 or a zero
+                    if (val[3] == 1) {
+                        // this means that there was an error on the android end. Either the buffer was full
+                        // or a message was received out of order.
+                        // So, this means that we need to reset and NOT send message1.
+                        Log.i(TAG, "Error on arduino. Resetting to message0");
+                        messages.clear();
+                    }
+                    if (messages.size() == 0) {
+                        // Turn off wait because we got a response and can now get the next frame
+                        wait = false;
+                    } else {
+                        sendMessage();
+                    }
+                    // TODO: actually check the response to see if it was for the right message
+                    // and if we're supposed to allow the follow up message.
+                    return true;
+                }
+                case MSG_ENQUEUE: {
+                    byte[] val = ((byte[]) msg.obj);
+                    messages.add(val);
+                    return true;
+                }
+                case MSG_REPLACE: {
+                    byte[] val = ((byte[]) msg.obj);
+                    messages.clear();
+                    messages.add(val);
+                    return true;
+                }
+                case MSG_SEND: {
+                    byte[] data = messages.remove();
+                    Log.i(TAG, "Writing msg: " + bytesToHex(data));
+                    wait = true;
+                    waitOverride = System.currentTimeMillis() + 1000;
+                    characteristic.setValue(data);
+                    gatt.writeCharacteristic(characteristic);
+                }
+            }
+            return false;
+        }
     }
 }

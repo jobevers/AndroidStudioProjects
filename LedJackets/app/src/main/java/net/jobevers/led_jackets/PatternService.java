@@ -14,9 +14,11 @@ import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 
 public class PatternService extends Service {
+    private static final String TAG = "PatternService";
     // Use this to post stuff back to the UI
     ArrayList<PatternDrawListener> drawListeners = new ArrayList<>();
     private final Handler mainLooper;
+    FrameThread p;
 
     public interface PatternDrawListener {
         void onFrame(int frameCount, HSV[] pixels);
@@ -41,12 +43,25 @@ public class PatternService extends Service {
     }
 
     public void addDrawListener(PatternDrawListener drawListener) {
-        this.drawListeners.add(drawListener);
+        if (!drawListeners.contains(drawListener)) {
+            this.drawListeners.add(drawListener);
+        } else {
+            Log.w(TAG, "drawListener is already present");
+        }
     }
 
     public void run(int nJackets) {
-        FrameThread p = new FrameThread(nJackets);
-        new Thread(p).start();
+        if (p == null) {
+            p = new FrameThread(nJackets);
+            new Thread(p).start();
+        } else {
+            Log.w(TAG, "FrameThread is started");
+        }
+    }
+
+    public void triggerReset() {
+        // Sure, this isn't threadsafe.  whatever.
+        p.resetPill = true;
     }
 
     class FrameThread implements Runnable {
@@ -54,6 +69,7 @@ public class PatternService extends Service {
         int nJackets;
         int frameLength = 33;
         boolean poisonPill = false;
+        boolean resetPill = false;
         int frameCount = 0;
         int hue = 0;
         HSV pixels[];
@@ -71,12 +87,20 @@ public class PatternService extends Service {
             for (int i = 0; i < pixels.length; i++) {
                 pixels[i].hue = hue;
             }
-            hue = (hue + 1) & 0xFF;
+            hue = 128; //(hue + 1) & 0xFF;
+        }
+
+        private void doReset() {
+            frameCount = 0;
+            resetPill = false;
         }
 
         public void run() {
             while (!poisonPill) {
                 long start = System.currentTimeMillis();
+                if (resetPill) {
+                    doReset();
+                }
                 draw();
                 mainLooper.post(() -> {
                     for (PatternDrawListener dl : drawListeners) {

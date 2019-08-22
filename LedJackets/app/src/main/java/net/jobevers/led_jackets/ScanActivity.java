@@ -59,15 +59,39 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
         }
     }
 
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        Log.i(TAG, "onPause()");
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        Log.i(TAG, "onStart()");
+    }
+
     @Override
     protected void onStop() {
         super.onStop();
-        Log.i(TAG, "scanActivity: stopping services");
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Log.d(TAG, "onDestroy()");
+        // Both of these services need to run even when the activity
+        // is stopped, etc.
         if (jacketService != null) {
+            Log.i(TAG, "unbinding from jacket service");
             unbindService(jacketConnection);
+            jacketService = null;
         }
         if (patternService != null) {
+            Log.i(TAG, "unbinding from pattern service");
             unbindService(patternConnection);
+            patternService = null;
         }
     }
 
@@ -106,11 +130,11 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
                 patternDisplay = new PatternDisplay();
                 PFragment fragment = new PFragment(patternDisplay);
                 fragment.setView(processingFrame, ScanActivity.this);
-                Log.d(TAG, "PLAY BUTTON clicked.  Creating PatternService for devices!");
+                Log.i(TAG, "PLAY BUTTON clicked.  Creating PatternService for devices!");
                 bindService(
                         new Intent(ScanActivity.this, PatternService.class),
                         patternConnection, Context.BIND_AUTO_CREATE);
-                // Now, wait until we're all connected
+                // TODO: change to stop, which will a disconnect
                 goButton.setEnabled(false);
             });
         }
@@ -147,8 +171,13 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            Log.d(TAG, "onServiceDisconnected");
+            Log.d(TAG, "onJacketServiceDisconnected");
             jacketService = null;
+        }
+
+        @Override
+        public void onBindingDied(ComponentName name) {
+            Log.d(TAG, "onJacketServiceBindingDied");
         }
     };
 
@@ -160,11 +189,12 @@ public class ScanActivity extends AppCompatActivity implements FragmentManager.O
             // create patterns and send the frames back up.
             patternService.addDrawListener(drawListener);
             patternService.run(devices.size());
+            jacketService.setPatternService(patternService);
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            Log.d(TAG, "onServiceDisconnected");
+            Log.d(TAG, "onPatternServiceDisconnected");
             patternService = null;
         }
     };
